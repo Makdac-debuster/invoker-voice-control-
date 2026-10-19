@@ -7,3 +7,6 @@ keys.json
 
 __pycache__/
 *.bak
+
+# Журнал прокастов Лины
+lina_log.txt

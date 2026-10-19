@@ -125,6 +125,7 @@ VK_CAPITAL = 0x14
 INPUT_MOUSE = 0
 # кнопка -> (флаг нажатия, флаг отпускания, mouseData)
 MOUSE_BUTTONS = {
+    "MOUSE1": (0x0002, 0x0004, 0),       # LEFTDOWN / LEFTUP (клик для каста без quick cast)
     "MOUSE3": (0x0020, 0x0040, 0),       # MIDDLEDOWN / MIDDLEUP
     "MOUSE4": (0x0080, 0x0100, 0x0001),  # XDOWN / XUP, XBUTTON1
     "MOUSE5": (0x0080, 0x0100, 0x0002),  # XBUTTON2
