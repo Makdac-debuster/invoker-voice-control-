@@ -1,4 +1,4 @@
-# Модель распознавания скачивается при первом запуске (~88 МБ)
+# Модель распознавания скачивается при первом запуске
 model/
 model.zip
 
@@ -6,7 +6,13 @@ model.zip
 keys.json
 
 __pycache__/
+*.py[cod]
 *.bak
+.venv/
+venv/
+.pytest_cache/
+github-update/
+github-ready.zip
 
 # Журнал прокастов Лины
 lina_log.txt

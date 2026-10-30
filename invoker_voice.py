@@ -16,7 +16,7 @@
 import ctypes
 import json
 import msvcrt
-import queue
+from audio_buffer import AudioBuffer
 import re
 import sys
 import time
@@ -331,7 +331,8 @@ CHUNK = 0.05  # сек звука за раз
 # Быстрое срабатывание: если промежуточный результат — готовая команда и не меняется
 # столько секунд, выполняем сразу, не дожидаясь паузы после фразы (Vosk ждёт ~0.5–1 с).
 # Если «пятнадцать» иногда срабатывает как «пять», увеличьте. None — выключить.
-FAST_TRIGGER = 0.25
+FAST_TRIGGER = 0.15
+CAMERA_TRIGGER = 0.25
 
 
 def find_mic() -> dict:
@@ -434,10 +435,17 @@ class Listener:
         self.stable += CHUNK
         words = current.split()
         rest = " ".join(words[len(self.done):])
-        if (self.stable >= FAST_TRIGGER and words[:len(self.done)] == self.done
-                and (rest in ALIASES or rest in PLACES)):
-            execute(rest, self.cfg_dir)
+        commands = split_commands(rest.split()) if rest else None
+        threshold = max(FAST_TRIGGER, CAMERA_TRIGGER) if commands and any(c in PLACES for c in commands) else FAST_TRIGGER
+        if (self.stable >= threshold and words[:len(self.done)] == self.done
+                and commands):
+            for command in commands:
+                execute(command, self.cfg_dir)
             self.done = words
+
+    def reset(self) -> None:
+        self.recognizer.Reset()
+        self.partial, self.stable, self.done = "", 0.0, []
 
     def finish(self) -> None:
         """Дораспознать начатую фразу (выключили Caps)."""
@@ -445,6 +453,7 @@ class Listener:
 
     def _final(self, result_json: str) -> None:
         done, self.done, self.partial = self.done, [], ""
+        self.stable = 0.0
         words = words_from_result(result_json)
         if done:
             # Начало фразы уже сработало быстро. Если Vosk в итоге услышал его иначе —
@@ -500,10 +509,7 @@ def main() -> None:
     # Пишем с родной частотой микрофона, Vosk сам пересэмплирует.
     rate = int(mic["default_samplerate"])
     recognizer = make_recognizer(Model(str(MODEL_DIR)), rate)
-    audio = queue.Queue()
-
-    def on_audio(indata, frames, time_info, status):
-        audio.put(bytes(indata))
+    audio = AudioBuffer(listening)
 
     print(f"Микрофон: {mic['name']} ({rate} Гц)")
     print("Слушаю, пока включён Caps Lock. Ctrl+C — выход.")
@@ -515,16 +521,16 @@ def main() -> None:
     print("    «трон света/тьмы», «фонтан света/тьмы», «логово верх» / «логово низ»")
 
     with sd.RawInputStream(device=mic["index"], samplerate=rate, blocksize=int(rate * CHUNK),
-                           dtype="int16", channels=1, callback=on_audio):
+                           dtype="int16", channels=1, callback=audio.callback):
         listener = Listener(recognizer, cfg_dir)
         was_listening = False
         while True:
-            chunk = audio.get()
-            if not listening():
-                # Выключили Caps посреди фразы — дораспознаём сказанное, дальше звук выбрасываем.
+            chunk, reset = audio.get()
+            if reset:
+                listener.reset()
+            if chunk is None:
                 if was_listening:
-                    listener.finish()
-                    print("[Caps выкл] не слушаю")
+                    print("[Caps выкл / сброс звука] не слушаю")
                 was_listening = False
                 continue
             if not was_listening:

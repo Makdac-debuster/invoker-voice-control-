@@ -16,7 +16,7 @@ Laguna Blade бьёт в юнита, так что под курсором до�
 """
 
 import json
-import queue
+from audio_buffer import AudioBuffer
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -274,11 +274,16 @@ class Listener:
             fire()
             self.fired = True
 
+    def reset(self) -> None:
+        self.recognizer.Reset()
+        self.partial, self.stable, self.fired = "", 0.0, False
+
     def finish(self) -> None:
         self._final(self.recognizer.FinalResult())
 
     def _final(self, result_json: str) -> None:
         fired, self.fired, self.partial = self.fired, False, ""
+        self.stable = 0.0
         words = words_from_result(result_json)
         if fired:
             return
@@ -298,10 +303,7 @@ def main() -> None:
     grammar = json.dumps(TRIGGERS + ["[unk]"], ensure_ascii=False)
     recognizer = KaldiRecognizer(Model(str(MODEL_DIR)), rate, grammar)
     recognizer.SetWords(True)
-    audio = queue.Queue()
-
-    def on_audio(indata, frames, time_info, status):
-        audio.put(bytes(indata))
+    audio = AudioBuffer(listening)
 
     print(f"Микрофон: {mic['name']} ({rate} Гц)")
     print(f"Слушаю, пока включён Caps Lock. «{TRIGGERS[0]}» — прокаст W → Q → R в курсор. "
@@ -312,15 +314,16 @@ def main() -> None:
               "написано «по таймеру» — данных нет: проверьте параметр и перезапустите Dota.")
 
     with sd.RawInputStream(device=mic["index"], samplerate=rate, blocksize=int(rate * CHUNK),
-                           dtype="int16", channels=1, callback=on_audio):
+                           dtype="int16", channels=1, callback=audio.callback):
         listener = Listener(recognizer)
         was_listening = False
         while True:
-            chunk = audio.get()
-            if not listening():
+            chunk, reset = audio.get()
+            if reset:
+                listener.reset()
+            if chunk is None:
                 if was_listening:
-                    listener.finish()
-                    print("[Caps выкл] не слушаю")
+                    print("[Caps выкл / сброс звука] не слушаю")
                 was_listening = False
                 continue
             if not was_listening:
